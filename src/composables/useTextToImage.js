@@ -4,7 +4,11 @@ const API_PREFIX = 'http://localhost:8080/image/ai/api/chat'
 const MODEL_CONFIG = [
   {
     id: 'cogview-3-flash',
-    label: 'CogView-3 Flash',
+    label: '智谱清言',
+  },
+  {
+    id: 'doubao-seedream-4-0',
+    label: '豆包',
   },
 ]
 const POLL_INTERVAL_MS = 1000
