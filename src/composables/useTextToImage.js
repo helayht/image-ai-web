@@ -202,13 +202,16 @@ export const useTextToImage = () => {
   const submitPrompt = async () => {
     submissionError.value = ''
     globalError.value = ''
-    if (generationMode.value !== 'text-to-image') {
-      globalError.value = '当前仅支持文生图模式'
-      return
-    }
     const trimmedPrompt = promptInput.value.trim()
     if (!trimmedPrompt) {
       submissionError.value = '请输入描述内容'
+      return
+    }
+    if (
+      generationMode.value === 'image-to-image' &&
+      !referenceImageFile.value
+    ) {
+      submissionError.value = '请先上传参考图'
       return
     }
     const userMessage = createUserMessage(trimmedPrompt)
@@ -218,17 +221,45 @@ export const useTextToImage = () => {
     promptInput.value = ''
     isSubmitting.value = true
     try {
-      const response = await fetch(`${API_PREFIX}/text_to_image`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: trimmedPrompt,
-          models: MODEL_CONFIG.map((model) => model.id),
-          size: selectedSize.value,
-          mode: 'fast',
-        }),
-      })
-      const payload = await response.json()
+      const models = MODEL_CONFIG.map((model) => model.id)
+      const payload =
+        generationMode.value === 'text-to-image'
+          ? await (async () => {
+              const response = await fetch(`${API_PREFIX}/text_to_image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  prompt: trimmedPrompt,
+                  models,
+                  size: selectedSize.value,
+                  mode: 'fast',
+                }),
+              })
+              return response.json()
+            })()
+          : await (async () => {
+              const formData = new FormData()
+              formData.append(
+                'chatRequestDTO',
+                new Blob(
+                  [
+                    JSON.stringify({
+                      prompt: trimmedPrompt,
+                      models,
+                      size: selectedSize.value,
+                      mode: 'fast',
+                    }),
+                  ],
+                  { type: 'application/json' },
+                ),
+              )
+              formData.append('imageFile', referenceImageFile.value)
+              const response = await fetch(`${API_PREFIX}/image_to_image`, {
+                method: 'POST',
+                body: formData,
+              })
+              return response.json()
+            })()
       if (payload.code !== '200' || !payload.data) {
         finalizeFailure(assistantMessage)
         return
