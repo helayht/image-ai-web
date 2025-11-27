@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AppHeader from './AppHeader.vue'
 import SidebarPanel from './SidebarPanel.vue'
 import ConversationView from '../chat/ConversationView.vue'
@@ -24,6 +24,9 @@ const {
   referenceImagePreview,
   globalError,
   hasPendingTasks,
+  setUsername,
+  isManagingSessions,
+  selectedConversationIds,
   generationMode,
   selectedSize,
   sizeOptions,
@@ -37,6 +40,9 @@ const {
   loadConversations,
   startNewSession,
   selectSession,
+  toggleManaging,
+  toggleSelection,
+  deleteSelectedConversations,
 } = useTextToImage()
 
 const conversationRef = ref(null)
@@ -62,8 +68,17 @@ const handleSelectSession = (session) => {
 }
 
 onMounted(() => {
+  setUsername(props.user?.username || '')
   loadConversations()
 })
+
+watch(
+  () => props.user?.username,
+  (value) => {
+    setUsername(value || '')
+    loadConversations()
+  },
+)
 </script>
 
 <template>
@@ -78,8 +93,13 @@ onMounted(() => {
         :has-pending-tasks="hasPendingTasks"
         :sessions="sessions"
         :active-session-id="activeSessionId"
+        :is-managing="isManagingSessions"
+        :selected-conversation-ids="selectedConversationIds"
         @new-chat="handleStartNewChat"
         @select-session="handleSelectSession"
+        @toggle-manage="toggleManaging"
+        @toggle-select="toggleSelection"
+        @delete-selected="deleteSelectedConversations"
       />
       <section class="workspace-main">
         <ConversationView

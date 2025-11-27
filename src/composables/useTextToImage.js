@@ -43,6 +43,9 @@ export const useTextToImage = () => {
   const sessions = ref([])
   const activeSessionId = ref('')
   const isLoadingSessions = ref(false)
+  const username = ref('')
+  const isManagingSessions = ref(false)
+  const selectedConversationIds = ref(new Set())
 
   const createSession = ({
     title = '新对话',
@@ -167,9 +170,17 @@ export const useTextToImage = () => {
   }
 
   const loadConversations = async () => {
+    if (!username.value) {
+      sessions.value = []
+      activeSessionId.value = ''
+      chatItems.value = []
+      return
+    }
     isLoadingSessions.value = true
     try {
-      const response = await fetch(`${API_MESSAGE}/conversations_list`)
+      const response = await fetch(
+        `${API_MESSAGE}/conversations_list/${encodeURIComponent(username.value)}`,
+      )
       const payload = await response.json()
       if (payload.code === '200' && Array.isArray(payload.data)) {
         sessions.value = payload.data.map((record) =>
@@ -209,6 +220,10 @@ export const useTextToImage = () => {
 
   const selectSession = async (session) => {
     if (!session || session.id === activeSessionId.value) return
+    if (isManagingSessions.value) {
+      toggleSelection(session)
+      return
+    }
     stopAllTrackers()
     activeSessionId.value = session.id
     promptInput.value = ''
@@ -221,6 +236,46 @@ export const useTextToImage = () => {
     if (session.conversationId) {
       await loadConversationMessages(session.conversationId)
     }
+  }
+
+  const toggleManaging = () => {
+    isManagingSessions.value = !isManagingSessions.value
+    if (!isManagingSessions.value) {
+      selectedConversationIds.value = new Set()
+    }
+  }
+
+  const toggleSelection = (session) => {
+    if (!session?.conversationId) return
+    const next = new Set(selectedConversationIds.value)
+    if (next.has(session.conversationId)) {
+      next.delete(session.conversationId)
+    } else {
+      next.add(session.conversationId)
+    }
+    selectedConversationIds.value = next
+  }
+
+  const deleteSelectedConversations = async () => {
+    const ids = Array.from(selectedConversationIds.value).filter(Boolean)
+    if (!ids.length) return false
+    try {
+      const response = await fetch(`${API_MESSAGE}/conversations/del`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ids),
+      })
+      const payload = await response.json()
+      if (payload.code === '200' && payload.data === true) {
+        await loadConversations()
+        selectedConversationIds.value = new Set()
+        isManagingSessions.value = false
+        return true
+      }
+    } catch (error) {
+      // ignore
+    }
+    return false
   }
 
   const clearReferenceImage = () => {
@@ -397,6 +452,7 @@ export const useTextToImage = () => {
       const models = MODEL_CONFIG.map((model) => model.id)
       const basePayload = {
         prompt: trimmedPrompt,
+        username: username.value,
         models,
         size: selectedSize.value,
         mode: 'fast',
@@ -474,15 +530,23 @@ export const useTextToImage = () => {
     stopAllTrackers()
   }
 
+  const setUsername = (value = '') => {
+    username.value = (value || '').trim()
+  }
+
   return {
     promptInput,
     submissionError,
     isSubmitting,
     chatItems,
+    username,
     referenceImageFile,
     referenceImagePreview,
     globalError,
     hasPendingTasks,
+    setUsername,
+    isManagingSessions,
+    selectedConversationIds,
     sessions,
     activeSessionId,
     isLoadingSessions,
@@ -495,6 +559,9 @@ export const useTextToImage = () => {
     loadConversations,
     startNewSession,
     selectSession,
+    toggleManaging,
+    toggleSelection,
+    deleteSelectedConversations,
     submitPrompt,
     retryModel,
     resetConversation,
