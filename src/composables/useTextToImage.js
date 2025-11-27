@@ -1,6 +1,8 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
-const API_PREFIX = 'http://localhost:8080/image/ai/api/chat'
+const API_ROOT = 'http://localhost:8080/image/ai/api'
+const API_CHAT = `${API_ROOT}/chat`
+const API_MESSAGE = `${API_ROOT}/message`
 const MODEL_CONFIG = [
   {
     id: 'cogview-3-flash',
@@ -38,8 +40,36 @@ export const useTextToImage = () => {
   const referenceImagePreview = ref('')
   const selectedSize = ref(DEFAULT_SIZE)
   const sizeOptions = ref([...SUPPORTED_SIZES])
+  const sessions = ref([])
+  const activeSessionId = ref('')
+  const isLoadingSessions = ref(false)
+
+  const createSession = ({
+    title = '新对话',
+    conversationId = null,
+    updatedAt = new Date().toISOString(),
+  } = {}) =>
+    reactive({
+      id: createId('session'),
+      conversationId,
+      title,
+      updatedAt,
+    })
+
+  const activeSession = computed(() =>
+    sessions.value.find((session) => session.id === activeSessionId.value),
+  )
 
   const taskTrackers = new Map()
+
+  const stopAllTrackers = () => {
+    taskTrackers.forEach((tracker) => {
+      if (tracker?.timer) {
+        clearTimeout(tracker.timer)
+      }
+    })
+    taskTrackers.clear()
+  }
 
   const hasPendingTasks = computed(() =>
     chatItems.value.some(
@@ -51,6 +81,147 @@ export const useTextToImage = () => {
         ),
     ),
   )
+
+  watch(
+    chatItems,
+    () => {
+      const session = activeSession.value
+      if (!session) return
+      const firstUserMessage = chatItems.value.find(
+        (entry) => entry.role === 'user' && entry.prompt,
+      )
+      if (firstUserMessage?.prompt) {
+        session.title =
+          firstUserMessage.prompt.length > 20
+            ? `${firstUserMessage.prompt.slice(0, 20)}…`
+            : firstUserMessage.prompt
+      } else if (!session.title) {
+        session.title = '新对话'
+      }
+      session.updatedAt = new Date().toISOString()
+    },
+    { deep: true },
+  )
+
+  const mapAssistantModels = (entries = []) =>
+    entries.map((entry) =>
+      reactive({
+        key: `${entry.modelId || 'model'}-${Math.random().toString(16).slice(2, 8)}`,
+        modelId: entry.modelId || '',
+        modelName: entry.modelName || '生成结果',
+        status: entry.imageURL ? 'succeeded' : 'failed',
+        imageUrl: entry.imageURL || '',
+        errorMessage: entry.imageURL ? '' : DEFAULT_ERROR_TEXT,
+      }),
+    )
+
+  const normalizeMessageEntry = (entry) => {
+    const createdAt = entry?.createdTime
+      ? new Date(entry.createdTime).toISOString()
+      : new Date().toISOString()
+    if (entry?.role === 'assistant') {
+      return reactive({
+        id: createId('assistant'),
+        role: 'assistant',
+        createdAt,
+        models: mapAssistantModels(entry.assistantMessages || []),
+        taskId: null,
+      })
+    }
+    return reactive({
+      id: createId('user'),
+      role: 'user',
+      prompt: entry?.content || entry?.title || '',
+      createdAt,
+      referenceImagePreview: entry?.attachmentURL || '',
+    })
+  }
+
+  const loadConversationMessages = async (conversationId) => {
+    if (!conversationId) {
+      chatItems.value = []
+      return
+    }
+    stopAllTrackers()
+    try {
+      const response = await fetch(`${API_MESSAGE}/list/${conversationId}`)
+      const payload = await response.json()
+      if (payload.code !== '200' || !Array.isArray(payload.data)) {
+        chatItems.value = []
+        return
+      }
+      chatItems.value = payload.data.map((entry) => normalizeMessageEntry(entry))
+    } catch (error) {
+      chatItems.value = []
+    }
+  }
+
+  const ensureActiveSession = () => {
+    if (activeSession.value) return activeSession.value
+    if (!sessions.value.length) {
+      const draft = createSession()
+      sessions.value.push(draft)
+    }
+    activeSessionId.value = sessions.value[0].id
+    return sessions.value[0]
+  }
+
+  const loadConversations = async () => {
+    isLoadingSessions.value = true
+    try {
+      const response = await fetch(`${API_MESSAGE}/conversations_list`)
+      const payload = await response.json()
+      if (payload.code === '200' && Array.isArray(payload.data)) {
+        sessions.value = payload.data.map((record) =>
+          createSession({
+            title: record.title || '新对话',
+            conversationId: record.id ?? null,
+            updatedAt: record.createdTime || record.updatedTime || new Date().toISOString(),
+          }),
+        )
+      }
+    } catch (error) {
+      // ignore load error, keep local draft
+    } finally {
+      isLoadingSessions.value = false
+      const current = ensureActiveSession()
+      if (current?.conversationId) {
+        await loadConversationMessages(current.conversationId)
+      } else {
+        chatItems.value = []
+      }
+    }
+  }
+
+  const startNewSession = () => {
+    stopAllTrackers()
+    const newSession = createSession()
+    sessions.value.unshift(newSession)
+    activeSessionId.value = newSession.id
+    promptInput.value = ''
+    submissionError.value = ''
+    globalError.value = ''
+    chatItems.value = []
+    generationMode.value = 'text-to-image'
+    clearReferenceImage()
+    selectedSize.value = DEFAULT_SIZE
+  }
+
+  const selectSession = async (session) => {
+    if (!session || session.id === activeSessionId.value) return
+    stopAllTrackers()
+    activeSessionId.value = session.id
+    promptInput.value = ''
+    submissionError.value = ''
+    globalError.value = ''
+    chatItems.value = []
+    generationMode.value = 'text-to-image'
+    clearReferenceImage()
+    selectedSize.value = DEFAULT_SIZE
+    if (session.conversationId) {
+      await loadConversationMessages(session.conversationId)
+    }
+  }
 
   const clearReferenceImage = () => {
     referenceImageFile.value = null
@@ -170,7 +341,7 @@ export const useTextToImage = () => {
         return
       }
       try {
-        const response = await fetch(`${API_PREFIX}/tasks/${taskId}`)
+        const response = await fetch(`${API_CHAT}/tasks/${taskId}`)
         const payload = await response.json()
         if (payload.code !== '200' || !payload.data) {
           finalizeFailure(message)
@@ -214,6 +385,8 @@ export const useTextToImage = () => {
       submissionError.value = '请先上传参考图'
       return
     }
+    const session = ensureActiveSession()
+    const conversationId = session?.conversationId ?? null
     const userMessage = createUserMessage(trimmedPrompt)
     const assistantMessage = createAssistantMessage()
     chatItems.value.push(userMessage, assistantMessage)
@@ -222,18 +395,20 @@ export const useTextToImage = () => {
     isSubmitting.value = true
     try {
       const models = MODEL_CONFIG.map((model) => model.id)
+      const basePayload = {
+        prompt: trimmedPrompt,
+        models,
+        size: selectedSize.value,
+        mode: 'fast',
+        conversationsId: conversationId ?? null,
+      }
       const payload =
         generationMode.value === 'text-to-image'
           ? await (async () => {
-              const response = await fetch(`${API_PREFIX}/text_to_image`, {
+              const response = await fetch(`${API_CHAT}/text_to_image`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  prompt: trimmedPrompt,
-                  models,
-                  size: selectedSize.value,
-                  mode: 'fast',
-                }),
+                body: JSON.stringify(basePayload),
               })
               return response.json()
             })()
@@ -242,19 +417,12 @@ export const useTextToImage = () => {
               formData.append(
                 'chatRequestDTO',
                 new Blob(
-                  [
-                    JSON.stringify({
-                      prompt: trimmedPrompt,
-                      models,
-                      size: selectedSize.value,
-                      mode: 'fast',
-                    }),
-                  ],
+                  [JSON.stringify(basePayload)],
                   { type: 'application/json' },
                 ),
               )
               formData.append('imageFile', referenceImageFile.value)
-              const response = await fetch(`${API_PREFIX}/image_to_image`, {
+              const response = await fetch(`${API_CHAT}/image_to_image`, {
                 method: 'POST',
                 body: formData,
               })
@@ -264,11 +432,26 @@ export const useTextToImage = () => {
         finalizeFailure(assistantMessage)
         return
       }
-      assistantMessage.taskId = payload.data
+      const taskId = payload.data?.taskId ?? payload.data
+      const newConversationId = payload.data?.conversationsId ?? conversationId ?? null
+      if (!taskId) {
+        finalizeFailure(assistantMessage)
+        return
+      }
+      assistantMessage.taskId = taskId
       assistantMessage.models.forEach((model) => {
         model.status = 'running'
       })
-      pollTaskUntilDone(assistantMessage, payload.data)
+      const active = activeSession.value || session
+      if (active) {
+        active.conversationId = newConversationId
+        active.updatedAt = new Date().toISOString()
+      } else if (newConversationId) {
+        const created = createSession({ conversationId: newConversationId })
+        sessions.value.unshift(created)
+        activeSessionId.value = created.id
+      }
+      pollTaskUntilDone(assistantMessage, taskId)
     } catch (error) {
       finalizeFailure(assistantMessage)
     } finally {
@@ -288,12 +471,7 @@ export const useTextToImage = () => {
     generationMode.value = 'text-to-image'
     clearReferenceImage()
     selectedSize.value = DEFAULT_SIZE
-    taskTrackers.forEach((tracker) => {
-      if (tracker?.timer) {
-        clearTimeout(tracker.timer)
-      }
-    })
-    taskTrackers.clear()
+    stopAllTrackers()
   }
 
   return {
@@ -305,12 +483,18 @@ export const useTextToImage = () => {
     referenceImagePreview,
     globalError,
     hasPendingTasks,
+    sessions,
+    activeSessionId,
+    isLoadingSessions,
     generationMode,
     selectedSize,
     sizeOptions,
     handleReferenceFile,
     clearReferenceImage,
     setGenerationMode,
+    loadConversations,
+    startNewSession,
+    selectSession,
     submitPrompt,
     retryModel,
     resetConversation,

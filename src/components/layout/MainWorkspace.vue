@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppHeader from './AppHeader.vue'
 import SidebarPanel from './SidebarPanel.vue'
 import ConversationView from '../chat/ConversationView.vue'
@@ -32,58 +32,17 @@ const {
   setGenerationMode,
   submitPrompt,
   retryModel,
-  resetConversation,
+  sessions,
+  activeSessionId,
+  loadConversations,
+  startNewSession,
+  selectSession,
 } = useTextToImage()
 
 const conversationRef = ref(null)
 
 const referenceImageName = computed(
   () => referenceImageFile.value && referenceImageFile.value.name,
-)
-
-const createSession = (title = '新对话') => ({
-  id: `session-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-  title,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-})
-
-const sessions = ref([createSession()])
-const activeSessionId = ref(sessions.value[0].id)
-
-const activeSession = computed(() =>
-  sessions.value.find((session) => session.id === activeSessionId.value),
-)
-
-const scrollToBottom = () => {
-  const container = conversationRef.value?.getContainer()
-  if (!container) return
-  container.scrollTo({
-    top: container.scrollHeight,
-    behavior: 'smooth',
-  })
-}
-
-watch(
-  chatItems,
-  () => {
-    nextTick(scrollToBottom)
-    const session = activeSession.value
-    if (!session) return
-    const firstUserMessage = chatItems.value.find(
-      (entry) => entry.role === 'user' && entry.prompt,
-    )
-    if (firstUserMessage?.prompt) {
-      session.title =
-        firstUserMessage.prompt.length > 20
-          ? `${firstUserMessage.prompt.slice(0, 20)}…`
-          : firstUserMessage.prompt
-    } else {
-      session.title = '新对话'
-    }
-    session.updatedAt = new Date().toISOString()
-  },
-  { deep: true },
 )
 
 const handleFileSelection = (file) => {
@@ -95,16 +54,16 @@ const handleSizeChange = (value) => {
 }
 
 const handleStartNewChat = () => {
-  const newSession = createSession()
-  sessions.value.unshift(newSession)
-  activeSessionId.value = newSession.id
-  resetConversation()
+  startNewSession()
 }
 
 const handleSelectSession = (session) => {
-  if (!session || session.id === activeSessionId.value) return
-  // 功能预留：后续在此恢复历史对话内容
+  selectSession(session)
 }
+
+onMounted(() => {
+  loadConversations()
+})
 </script>
 
 <template>
