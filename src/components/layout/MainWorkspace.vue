@@ -46,6 +46,7 @@ const {
 } = useTextToImage()
 
 const conversationRef = ref(null)
+const isSidebarCollapsed = ref(false)
 
 const referenceImageName = computed(
   () => referenceImageFile.value && referenceImageFile.value.name,
@@ -65,6 +66,10 @@ const handleStartNewChat = () => {
 
 const handleSelectSession = (session) => {
   selectSession(session)
+}
+
+const toggleSidebar = () => {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
 onMounted(() => {
@@ -93,6 +98,7 @@ watch(
         :has-pending-tasks="hasPendingTasks"
         :sessions="sessions"
         :active-session-id="activeSessionId"
+        :is-collapsed="isSidebarCollapsed"
         :is-managing="isManagingSessions"
         :selected-conversation-ids="selectedConversationIds"
         @new-chat="handleStartNewChat"
@@ -100,6 +106,7 @@ watch(
         @toggle-manage="toggleManaging"
         @toggle-select="toggleSelection"
         @delete-selected="deleteSelectedConversations"
+        @toggle-collapse="toggleSidebar"
       />
       <section class="workspace-main">
         <ConversationView

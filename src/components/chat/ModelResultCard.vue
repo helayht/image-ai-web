@@ -38,9 +38,9 @@ const statusText = (status) => {
       <div v-if="model.status === 'succeeded' && model.imageUrl" class="model-image-wrapper">
         <img :src="model.imageUrl" :alt="`${model.modelName} 生成结果`" loading="lazy"/>
         <div class="model-actions">
-          <a class="link-button" :href="model.imageUrl" target="_blank" rel="noopener">
-            新窗口查看
-          </a>
+<!--          <a class="link-button" :href="model.imageUrl" target="_blank" rel="noopener">-->
+<!--            新窗口查看-->
+<!--          </a>-->
           <a class="link-button" :href="model.imageUrl" download>
             下载图片
           </a>

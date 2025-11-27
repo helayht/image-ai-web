@@ -91,23 +91,52 @@ watch(
 <template>
   <section class="composer">
     <form class="composer-form" @submit.prevent="emit('submit')">
-      <div class="mode-toggle">
+      <div class="composer-bar">
+        <div class="mode-toggle">
+          <button
+            type="button"
+            class="mode-option"
+            :class="{ active: props.generationMode === 'text-to-image' }"
+            @click="updateGenerationMode('text-to-image')"
+          >
+            文生图
+          </button>
+          <button
+            type="button"
+            class="mode-option"
+            :class="{ active: props.generationMode === 'image-to-image' }"
+            @click="updateGenerationMode('image-to-image')"
+          >
+            图生图
+          </button>
+        </div>
+        <label class="size-selector compact">
+          <span>尺寸</span>
+          <select :value="props.size" @change="handleSizeChange">
+            <option
+              v-for="option in (props.sizeOptions.length ? props.sizeOptions : [{ label: props.size, value: props.size }])"
+              :key="option.value || option"
+              :value="option.value || option"
+            >
+              {{ option.label || option }}
+            </option>
+          </select>
+        </label>
         <button
+          v-if="isImageMode"
           type="button"
-          class="mode-option"
-          :class="{ active: props.generationMode === 'text-to-image' }"
-          @click="updateGenerationMode('text-to-image')"
+          class="upload-button"
+          @click="openFilePicker"
         >
-          文生图
+          添加参考图
         </button>
-        <button
-          type="button"
-          class="mode-option"
-          :class="{ active: props.generationMode === 'image-to-image' }"
-          @click="updateGenerationMode('image-to-image')"
-        >
-          图生图
-        </button>
+        <span v-else class="mode-hint">仅需文本描述</span>
+        <span v-if="props.referenceImageName" class="file-meta inline">
+          {{ props.referenceImageName }}
+          <button type="button" class="remove-file" @click="handleClearFile">
+            移除
+          </button>
+        </span>
       </div>
 
       <div class="input-field">
@@ -132,35 +161,6 @@ watch(
             </svg>
           </button>
         </div>
-        <div class="input-meta">
-          <label class="size-selector">
-            <span>尺寸</span>
-            <select :value="props.size" @change="handleSizeChange">
-              <option
-                v-for="option in (props.sizeOptions.length ? props.sizeOptions : [{ label: props.size, value: props.size }])"
-                :key="option.value || option"
-                :value="option.value || option"
-              >
-                {{ option.label || option }}
-              </option>
-            </select>
-          </label>
-          <button
-            v-if="isImageMode"
-            type="button"
-            class="upload-button"
-            @click="openFilePicker"
-          >
-            添加参考图
-          </button>
-          <span v-else class="mode-hint">该模式仅需文本描述</span>
-          <span v-if="props.referenceImageName" class="file-meta">
-            {{ props.referenceImageName }}
-            <button type="button" class="remove-file" @click="handleClearFile">
-              移除
-            </button>
-          </span>
-        </div>
         <input
           ref="fileInputRef"
           class="hidden-input"
@@ -169,13 +169,6 @@ watch(
           :disabled="!isImageMode"
           @change="handleFileChange"
         />
-        <div
-          v-if="props.referenceImagePreview && isImageMode"
-          class="reference-preview inline"
-        >
-          <img :src="props.referenceImagePreview" alt="参考图像预览" />
-          <span>参考图像预览</span>
-        </div>
       </div>
 
       <div v-if="props.submissionError" class="form-error">
