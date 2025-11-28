@@ -22,6 +22,8 @@ const {
   chatItems,
   referenceImageFile,
   referenceImagePreview,
+  referenceVideoFile,
+  referenceVideoName,
   globalError,
   hasPendingTasks,
   setUsername,
@@ -32,6 +34,8 @@ const {
   sizeOptions,
   handleReferenceFile,
   clearReferenceImage,
+  handleReferenceVideo,
+  clearReferenceVideo,
   setGenerationMode,
   submitPrompt,
   retryModel,
@@ -51,9 +55,16 @@ const isSidebarCollapsed = ref(false)
 const referenceImageName = computed(
   () => referenceImageFile.value && referenceImageFile.value.name,
 )
+const referenceVideoLabel = computed(
+  () => referenceVideoFile.value && referenceVideoFile.value.name,
+)
 
 const handleFileSelection = (file) => {
   handleReferenceFile(file)
+}
+
+const handleVideoSelection = (file) => {
+  handleReferenceVideo(file)
 }
 
 const handleSizeChange = (value) => {
@@ -123,12 +134,15 @@ watch(
           :submission-error="submissionError"
           :reference-image-name="referenceImageName"
           :reference-image-preview="referenceImagePreview"
+          :reference-video-name="referenceVideoLabel"
           :global-error="globalError"
           @submit="submitPrompt"
           @update:generation-mode="setGenerationMode"
           @update:size="handleSizeChange"
           @select-file="handleFileSelection"
           @clear-file="() => clearReferenceImage()"
+          @select-video-file="handleVideoSelection"
+          @clear-video-file="() => clearReferenceVideo()"
         />
       </section>
     </div>

@@ -34,6 +34,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  referenceVideoName: {
+    type: String,
+    default: '',
+  },
   globalError: {
     type: String,
     default: '',
@@ -47,26 +51,43 @@ const emit = defineEmits([
   'submit',
   'select-file',
   'clear-file',
+  'select-video-file',
+  'clear-video-file',
 ])
 
 const fileInputRef = ref(null)
 const isImageMode = computed(
   () => props.generationMode === 'image-to-image',
 )
+const isVideoMode = computed(
+  () => props.generationMode === 'video-to-image',
+)
+const isUploadMode = computed(() => isImageMode.value || isVideoMode.value)
+const displayFileName = computed(() => {
+  if (isImageMode.value) return props.referenceImageName
+  if (isVideoMode.value) return props.referenceVideoName
+  return ''
+})
+const fileAccept = computed(() => (isVideoMode.value ? 'video/*' : 'image/*'))
 
 const handleFileChange = (event) => {
-  if (!isImageMode.value) return
+  if (!isUploadMode.value) return
   const [file] = event.target.files || []
-  emit('select-file', file || null)
+  if (isImageMode.value) {
+    emit('select-file', file || null)
+  } else if (isVideoMode.value) {
+    emit('select-video-file', file || null)
+  }
 }
 
 const openFilePicker = () => {
-  if (!isImageMode.value) return
+  if (!isUploadMode.value) return
   fileInputRef.value?.click()
 }
 
 const handleClearFile = () => {
-  emit('clear-file')
+  if (isImageMode.value) emit('clear-file')
+  if (isVideoMode.value) emit('clear-video-file')
 }
 
 const updateGenerationMode = (mode) => {
@@ -80,6 +101,15 @@ const handleSizeChange = (event) => {
 
 watch(
   () => props.referenceImageName,
+  (value, oldValue) => {
+    if (!value && oldValue && fileInputRef.value) {
+      fileInputRef.value.value = ''
+    }
+  },
+)
+
+watch(
+  () => props.referenceVideoName,
   (value, oldValue) => {
     if (!value && oldValue && fileInputRef.value) {
       fileInputRef.value.value = ''
@@ -109,6 +139,14 @@ watch(
           >
             图生图
           </button>
+          <button
+            type="button"
+            class="mode-option"
+            :class="{ active: props.generationMode === 'video-to-image' }"
+            @click="updateGenerationMode('video-to-image')"
+          >
+            视频生图
+          </button>
         </div>
         <label class="size-selector compact">
           <span>尺寸</span>
@@ -123,16 +161,16 @@ watch(
           </select>
         </label>
         <button
-          v-if="isImageMode"
+          v-if="isUploadMode"
           type="button"
           class="upload-button"
           @click="openFilePicker"
         >
-          添加参考图
+          {{ isVideoMode ? '上传参考视频' : '添加参考图' }}
         </button>
         <span v-else class="mode-hint">仅需文本描述</span>
-        <span v-if="props.referenceImageName" class="file-meta inline">
-          {{ props.referenceImageName }}
+        <span v-if="displayFileName" class="file-meta inline">
+          {{ displayFileName }}
           <button type="button" class="remove-file" @click="handleClearFile">
             移除
           </button>
@@ -165,8 +203,8 @@ watch(
           ref="fileInputRef"
           class="hidden-input"
           type="file"
-          accept="image/*"
-          :disabled="!isImageMode"
+          :accept="fileAccept"
+          :disabled="!isUploadMode"
           @change="handleFileChange"
         />
       </div>

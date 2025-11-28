@@ -38,6 +38,9 @@ export const useTextToImage = () => {
   const generationMode = ref('text-to-image')
   const referenceImageFile = ref(null)
   const referenceImagePreview = ref('')
+  const referenceVideoFile = ref(null)
+  const referenceVideoName = ref('')
+  const referenceVideoPreview = ref('')
   const selectedSize = ref(DEFAULT_SIZE)
   const sizeOptions = ref([...SUPPORTED_SIZES])
   const sessions = ref([])
@@ -122,6 +125,7 @@ export const useTextToImage = () => {
     const createdAt = entry?.createdTime
       ? new Date(entry.createdTime).toISOString()
       : new Date().toISOString()
+    const attachmentUrl = entry?.attachmentURL || entry?.videoURL || ''
     if (entry?.role === 'assistant') {
       return reactive({
         id: createId('assistant'),
@@ -136,7 +140,15 @@ export const useTextToImage = () => {
       role: 'user',
       prompt: entry?.content || entry?.title || '',
       createdAt,
-      referenceImagePreview: entry?.attachmentURL || '',
+      referenceImagePreview:
+        attachmentUrl && attachmentUrl.match(/\.(png|jpg|jpeg|gif|webp)$/i)
+          ? attachmentUrl
+          : '',
+      referenceVideoPreview:
+        attachmentUrl && attachmentUrl.startsWith('http') && !attachmentUrl.match(/\.(png|jpg|jpeg|gif|webp)$/i)
+          ? attachmentUrl
+          : '',
+      referenceVideoName: entry?.attachmentName || entry?.videoName || '',
     })
   }
 
@@ -215,6 +227,7 @@ export const useTextToImage = () => {
     chatItems.value = []
     generationMode.value = 'text-to-image'
     clearReferenceImage()
+    clearReferenceVideo()
     selectedSize.value = DEFAULT_SIZE
   }
 
@@ -232,6 +245,7 @@ export const useTextToImage = () => {
     chatItems.value = []
     generationMode.value = 'text-to-image'
     clearReferenceImage()
+    clearReferenceVideo()
     selectedSize.value = DEFAULT_SIZE
     if (session.conversationId) {
       await loadConversationMessages(session.conversationId)
@@ -283,6 +297,12 @@ export const useTextToImage = () => {
     referenceImagePreview.value = ''
   }
 
+  const clearReferenceVideo = () => {
+    referenceVideoFile.value = null
+    referenceVideoName.value = ''
+    referenceVideoPreview.value = ''
+  }
+
   const handleReferenceFile = (file) => {
     if (!file) {
       clearReferenceImage()
@@ -305,12 +325,30 @@ export const useTextToImage = () => {
     reader.readAsDataURL(file)
   }
 
+  const handleReferenceVideo = (file) => {
+    if (!file) {
+      clearReferenceVideo()
+      return
+    }
+    if (!file.type?.startsWith('video/')) {
+      globalError.value = '仅支持视频文件作为参考'
+      clearReferenceVideo()
+      return
+    }
+    referenceVideoFile.value = file
+    referenceVideoName.value = file.name || ''
+    try {
+      referenceVideoPreview.value = URL.createObjectURL(file)
+    } catch (error) {
+      referenceVideoPreview.value = ''
+    }
+  }
+
   const setGenerationMode = (mode) => {
     if (generationMode.value === mode) return
     generationMode.value = mode
-    if (mode !== 'image-to-image') {
-      clearReferenceImage()
-    }
+    if (mode !== 'image-to-image') clearReferenceImage()
+    if (mode !== 'video-to-image') clearReferenceVideo()
   }
 
   const createUserMessage = (prompt) =>
@@ -320,6 +358,8 @@ export const useTextToImage = () => {
       prompt,
       createdAt: new Date().toISOString(),
       referenceImagePreview: referenceImagePreview.value,
+      referenceVideoName: referenceVideoName.value,
+      referenceVideoPreview: referenceVideoPreview.value,
     })
 
   const createAssistantMessage = () =>
@@ -440,6 +480,13 @@ export const useTextToImage = () => {
       submissionError.value = '请先上传参考图'
       return
     }
+    if (
+      generationMode.value === 'video-to-image' &&
+      !referenceVideoFile.value
+    ) {
+      submissionError.value = '请先上传参考视频'
+      return
+    }
     const session = ensureActiveSession()
     const conversationId = session?.conversationId ?? null
     const userMessage = createUserMessage(trimmedPrompt)
@@ -468,22 +515,39 @@ export const useTextToImage = () => {
               })
               return response.json()
             })()
-          : await (async () => {
-              const formData = new FormData()
-              formData.append(
-                'chatRequestDTO',
-                new Blob(
-                  [JSON.stringify(basePayload)],
-                  { type: 'application/json' },
-                ),
-              )
-              formData.append('imageFile', referenceImageFile.value)
-              const response = await fetch(`${API_CHAT}/image_to_image`, {
-                method: 'POST',
-                body: formData,
-              })
-              return response.json()
-            })()
+          : generationMode.value === 'image-to-image'
+            ? await (async () => {
+                const formData = new FormData()
+                formData.append(
+                  'chatRequestDTO',
+                  new Blob(
+                    [JSON.stringify(basePayload)],
+                    { type: 'application/json' },
+                  ),
+                )
+                formData.append('imageFile', referenceImageFile.value)
+                const response = await fetch(`${API_CHAT}/image_to_image`, {
+                  method: 'POST',
+                  body: formData,
+                })
+                return response.json()
+              })()
+            : await (async () => {
+                const formData = new FormData()
+                formData.append(
+                  'chatRequestDTO',
+                  new Blob(
+                    [JSON.stringify(basePayload)],
+                    { type: 'application/json' },
+                  ),
+                )
+                formData.append('vedioFile', referenceVideoFile.value)
+                const response = await fetch(`${API_CHAT}/vedio_to_image`, {
+                  method: 'POST',
+                  body: formData,
+                })
+                return response.json()
+              })()
       if (payload.code !== '200' || !payload.data) {
         finalizeFailure(assistantMessage)
         return
@@ -526,6 +590,7 @@ export const useTextToImage = () => {
     chatItems.value = []
     generationMode.value = 'text-to-image'
     clearReferenceImage()
+    clearReferenceVideo()
     selectedSize.value = DEFAULT_SIZE
     stopAllTrackers()
   }
@@ -542,6 +607,9 @@ export const useTextToImage = () => {
     username,
     referenceImageFile,
     referenceImagePreview,
+    referenceVideoFile,
+    referenceVideoName,
+    referenceVideoPreview,
     globalError,
     hasPendingTasks,
     setUsername,
@@ -555,6 +623,8 @@ export const useTextToImage = () => {
     sizeOptions,
     handleReferenceFile,
     clearReferenceImage,
+    handleReferenceVideo,
+    clearReferenceVideo,
     setGenerationMode,
     loadConversations,
     startNewSession,

@@ -38,6 +38,13 @@ const formattedTime = computed(() =>
           <img :src="item.referenceImagePreview" alt="参考图像预览" loading="lazy" />
           <span>参考图像</span>
         </div>
+        <div v-if="item.referenceVideoPreview" class="reference-video">
+          <video :src="item.referenceVideoPreview" controls preload="metadata" />
+          <span>{{ item.referenceVideoName || '参考视频' }}</span>
+        </div>
+        <div v-else-if="item.referenceVideoName" class="reference-file">
+          <span>参考视频：{{ item.referenceVideoName }}</span>
+        </div>
       </template>
 
       <template v-else>
